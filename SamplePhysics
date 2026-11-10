@@ -1,0 +1,131 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <iomanip>
+
+// Simple 2D Vector Structure
+struct Vec2 {
+    double x, y;
+
+    Vec2 operator+(const Vec2& o) const { return {x + o.x, y + o.y}; }
+    Vec2 operator-(const Vec2& o) const { return {x - o.x, y - o.y}; }
+    Vec2 operator*(double scalar) const { return {x * scalar, y * scalar}; }
+    Vec2& operator+=(const Vec2& o) { x += o.x; y += o.y; return *this; }
+
+    double norm() const { return std::sqrt(x * x + y * y); }
+    Vec2 normalized() const {
+        double n = norm();
+        return n > 0.0001 ? Vec2{x / n, y / n} : Vec2{0, 0};
+    }
+};
+
+// Node (Mass particle) representation
+struct Node {
+    Vec2 pos;
+    Vec2 vel{0, 0};
+    Vec2 force{0, 0};
+    bool is_fixed;
+};
+
+// Structural Element (Strut or Cable)
+struct Element {
+    int nodeA;
+    int nodeB;
+    double rest_length;
+    double stiffness;
+    bool is_cable; // true = cable (tension only), false = strut (compression/tension)
+};
+
+int main() {
+    // 1. SETUP TOPOLOGY & PARAMETERS
+    // Base nodes pinned at (0,0) and (4,0). Top nodes floating at (1,3) and (3,3)
+    std::vector<Node> nodes = {
+        {{0.0, 0.0}, {0,0}, {0,0}, true},   // Node 0 (Base Left)
+        {{4.0, 0.0}, {0,0}, {0,0}, true},   // Node 1 (Base Right)
+        {{1.0, 3.0}, {0,0}, {0,0}, false},  // Node 2 (Top Left)
+        {{3.0, 3.0}, {0,0}, {0,0}, false}   // Node 3 (Top Right)
+    };
+
+    // Calculate initial geometric distances to establish rest lengths
+    auto get_dist = [&](int a, int b) { return (nodes[a].pos - nodes[b].pos).norm(); };
+
+    std::vector<Element> elements = {
+        // Struts (Stiff, normal rest length)
+        {0, 3, get_dist(0, 3), 1000.0, false}, 
+        {1, 2, get_dist(1, 2), 1000.0, false},
+        
+        // Cables (Pre-tensioned: rest length is cut 25% shorter than starting gap)
+        {0, 1, get_dist(0, 1) * 0.75, 50.0, true},
+        {2, 3, get_dist(2, 3) * 0.75, 50.0, true},
+        {0, 2, get_dist(0, 2) * 0.75, 50.0, true},
+        {1, 3, get_dist(1, 3) * 0.75, 50.0, true}
+    };
+
+    // Simulation Hyperparameters
+    const double dt = 0.01;         // Time step
+    const double damping = 0.95;     // Velocity damping factor to slow down oscillations
+    const int max_iterations = 2000; // Cap loop iterations
+    const double convergence_threshold = 1e-5;
+
+    std::cout << "Starting simulation loop...\n\n";
+
+    // 2. SIMULATION / DYNAMIC RELAXATION LOOP
+    for (int step = 0; step < max_iterations; ++step) {
+        // Clear old forces
+        for (auto& node : nodes) {
+            node.force = {0.0, 0.0};
+            // Optional: add gravity here if needed, e.g., node.force.y = -9.81 * mass;
+        }
+
+        // Calculate Hookean internal forces for all components
+        for (const auto& elem : elements) {
+            Vec2 diff = nodes[elem.nodeB].pos - nodes[elem.nodeA].pos;
+            double current_length = diff.norm();
+            Vec2 direction = diff.normalized();
+
+            double elongation = current_length - elem.rest_length;
+
+            // If it's a cable, it cannot push (no compression force if slack)
+            if (elem.is_cable && elongation < 0.0) {
+                elongation = 0.0;
+            }
+
+            // Force vector (F = k * delta_x)
+            Vec2 f_vector = direction * (elem.stiffness * elongation);
+
+            // Equal and opposite reactions
+            nodes[elem.nodeA].force += f_vector;
+            nodes[elem.nodeB].force = nodes[elem.nodeB].force - f_vector;
+        }
+
+        // Update kinematics (Symplectic Euler Integration)
+        double max_vel_sq = 0.0;
+        for (auto& node : nodes) {
+            if (node.is_fixed) continue; // Pinned nodes do not move
+
+            // Acceleration = Force / Mass (Assuming Mass = 1.0 for simplicity)
+            node.vel += node.force * dt;
+            node.vel = node.vel * damping; // Apply artificial friction
+            node.pos += node.vel * dt;
+
+            double vel_sq = node.vel.x * node.vel.x + node.vel.y * node.vel.y;
+            if (vel_sq > max_vel_sq) max_vel_sq = vel_sq;
+        }
+
+        // Check if kinetic energy has completely dissipated (Equilibrium achieved)
+        if (std::sqrt(max_vel_sq) < convergence_threshold) {
+            std::cout << "Equilibrium converged successfully at step: " << step << "\n\n";
+            break;
+        }
+    }
+
+    // 3. PRINT FINAL EQUILIBRIUM POSITIONS
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "Final Balanced Node Positions:\n";
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        std::cout << "Node " << i << ": (" << nodes[i].pos.x << ", " << nodes[i].pos.y << ")\n";
+    }
+
+    return 0;
+}
+
