@@ -1,0 +1,17 @@
+#include <iostream> 
+#include <Arduino.h>
+#include <cmath> 
+
+const float wheelDiameter = 0.2;
+float circumference = wheelDiameter * PI;
+double distance = 0;
+
+void loop () {
+  if (std::cin >> distance && distance > 0) {
+    double rotations = distance/circumference; 
+    std::cout << rotations;
+  }
+  else () {
+    return;
+  }
+}
