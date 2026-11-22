@@ -1,17 +1,20 @@
-#include <iostream> 
 #include <Arduino.h>
-#include <cmath> 
 
 const float wheelDiameter = 0.2;
-float circumference = wheelDiameter * PI;
-double distance = 0;
+const float circumference = wheelDiameter * PI;
+float distance = 0;
 
-void loop () {
-  if (std::cin >> distance && distance > 0) {
-    double rotations = distance/circumference; 
-    std::cout << rotations;
-  }
-  else () {
-    return;
+void setup() {
+  Serial.begin(9600);
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    distance = Serial.parseFloat();
+
+    if (distance > 0) {
+      float rotations = distance / circumference;
+      Serial.println(rotations);
+    }
   }
 }
